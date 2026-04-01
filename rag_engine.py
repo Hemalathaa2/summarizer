@@ -7,7 +7,7 @@ import streamlit as st
 # -----------------------------
 # GROQ CONFIG
 # -----------------------------
-MODEL_NAME = "llama3-8b-8192"
+MODEL_NAME = "llama-3.1-8b-instant"
 
 
 class RAGEngine:
