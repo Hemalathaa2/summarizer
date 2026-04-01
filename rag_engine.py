@@ -58,41 +58,24 @@ class RAGEngine:
     # --------------------------------
     def stream_answer(self, query):
 
-        contexts = self.retrieve(query)
-        prompt = self.build_prompt(query, contexts)
+    contexts = self.retrieve(query)
+    prompt = self.build_prompt(query, contexts)
 
-        payload = {
-            "model": MODEL_NAME,
-            "prompt": prompt,
-            "stream": True
-        }
+    stream = client.chat.completions.create(
+        model=MODEL_NAME,
+        messages=[{"role": "user", "content": prompt}],
+        stream=True,
+    )
 
-        response = requests.post(
-            OLLAMA_URL,
-            json=payload,
-            stream=True
-        )
+    full_text = ""
 
-        full_text = ""
+    for chunk in stream:
+        token = chunk.choices[0].delta.content or ""
+        full_text += token
+        yield token, contexts
 
-        for line in response.iter_lines():
-
-            if not line:
-                continue
-
-            try:
-                data = json.loads(line.decode("utf-8"))
-            except json.JSONDecodeError:
-                continue
-
-            token = data.get("response", "")
-            full_text += token
-
-            yield token, contexts
-
-        # save conversation memory
-        self.chat_history.append(f"User: {query}")
-        self.chat_history.append(f"Assistant: {full_text}")
+    self.chat_history.append(f"User: {query}")
+    self.chat_history.append(f"Assistant: {full_text}")
 
     # --------------------------------
     # FOLLOW-UP QUERY UNDERSTANDING
@@ -121,52 +104,27 @@ class RAGEngine:
     # --------------------------------
     def stream_summary(self):
 
-        if not self.chunks:
-            yield "No PDFs loaded.", []
-            return
+    texts = [c["text"] for c in self.chunks[:15]]
+    context_text = "\n\n".join(texts)
 
-        texts = [c["text"] for c in self.chunks[:15]]
-        context_text = "\n\n".join(texts)
-
-        prompt = f"""
-You are an expert document analyst.
-
-Provide a structured summary including:
+    prompt = f"""
+Provide a structured summary:
 - Main topics
 - Key insights
-- Important findings
+- Findings
 - Conclusion
 
-Document Content:
+Document:
 {context_text}
 """
 
-        payload = {
-            "model": MODEL_NAME,
-            "prompt": prompt,
-            "stream": True
-        }
+    stream = client.chat.completions.create(
+        model=MODEL_NAME,
+        messages=[{"role": "user", "content": prompt}],
+        stream=True,
+    )
 
-        response = requests.post(
-            OLLAMA_URL,
-            json=payload,
-            stream=True
-        )
-
-        full_text = ""
-
-        for line in response.iter_lines():
-
-            if not line:
-                continue
-
-            try:
-                data = json.loads(line.decode("utf-8"))
-            except:
-                continue
-
-            token = data.get("response", "")
-            full_text += token
-
-            yield token, self.chunks[:3]
+    for chunk in stream:
+        token = chunk.choices[0].delta.content or ""
+        yield token, self.chunks[:3]
 
