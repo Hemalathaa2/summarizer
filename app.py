@@ -2,117 +2,54 @@ import streamlit as st
 from rag_engine import RAGEngine
 
 st.set_page_config(page_title="PDF AI Assistant")
-
 st.title("📚 Multi-PDF AI Knowledge Assistant")
 
-# -------------------------
-# SESSION STATE INIT
-# -------------------------
+# ---------------- SESSION STATE ----------------
 if "rag" not in st.session_state:
     st.session_state.rag = RAGEngine()
 
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+if "files_hash" not in st.session_state:
+    st.session_state.files_hash = None
 
-if "last_uploaded_names" not in st.session_state:
-    st.session_state.last_uploaded_names = []
+if "summary" not in st.session_state:
+    st.session_state.summary = None
 
-# -------------------------
-# FILE UPLOADER
-# -------------------------
-files = st.file_uploader(
+# ---------------- FILE UPLOAD ----------------
+uploaded_files = st.file_uploader(
     "Upload PDFs",
     type="pdf",
     accept_multiple_files=True
 )
 
-# -------------------------
-# ✅ DETECT NEW UPLOADS
-# -------------------------
-if files:
+# ---------------- RESET WHEN FILES CHANGE ----------------
+if uploaded_files:
+    new_hash = tuple((f.name, f.size) for f in uploaded_files)
 
-    current_names = [f.name for f in files]
+    # Detect NEW upload set
+    if new_hash != st.session_state.files_hash:
+        st.session_state.files_hash = new_hash
+        st.session_state.summary = None
 
-    # If uploaded files changed → RESET EVERYTHING
-    if current_names != st.session_state.last_uploaded_names:
+        # Reset RAG memory
+        st.session_state.rag.clear()
 
-        # reset RAG completely
-        st.session_state.rag = RAGEngine()
+        # Load PDFs
+        for file in uploaded_files:
+            st.session_state.rag.add_pdf(file)
 
-        # clear old summaries/chat
-        st.session_state.messages = []
+        st.success("✅ PDFs loaded successfully")
 
-        # remember uploaded files
-        st.session_state.last_uploaded_names = current_names
+# ---------------- GENERATE SUMMARY ----------------
+if st.button("Generate Summary"):
+    if uploaded_files:
+        with st.spinner("Generating summary..."):
+            st.session_state.summary = (
+                st.session_state.rag.generate_summary()
+            )
+    else:
+        st.warning("Upload PDFs first")
 
-        with st.spinner("Indexing PDFs..."):
-            st.session_state.rag.load_pdfs(files)
-
-        st.success("PDFs Ready!")
-
-# -------------------------
-# SUMMARY BUTTON
-# -------------------------
-if files:
-
-    if st.button("🧠 Generate Document Summary"):
-
-        # ✅ clear previous summaries automatically
-        st.session_state.messages = []
-
-        with st.chat_message("assistant"):
-
-            placeholder = st.empty()
-            summary_text = ""
-
-            for token, _ in st.session_state.rag.stream_summary():
-                summary_text += token
-                placeholder.markdown(summary_text + "▌")
-
-            placeholder.markdown(summary_text)
-
-        st.session_state.messages.append(
-            {"role": "assistant", "content": summary_text}
-        )
-
-# -------------------------
-# DISPLAY CHAT HISTORY
-# -------------------------
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
-
-# -------------------------
-# CHAT INPUT
-# -------------------------
-query = st.chat_input("Ask something about PDFs...")
-
-if query:
-
-    rag = st.session_state.rag
-
-    st.session_state.messages.append(
-        {"role": "user", "content": query}
-    )
-
-    with st.chat_message("user"):
-        st.markdown(query)
-
-    with st.chat_message("assistant"):
-
-        placeholder = st.empty()
-        full_response = ""
-
-        for token, contexts in rag.stream_answer(query):
-            full_response += token
-            placeholder.markdown(full_response + "▌")
-
-        citation_text = "\n\n---\n**Sources:**\n"
-        for c in contexts:
-            citation_text += f"- 📄 {c['source']} (Page {c['page']})\n"
-
-        placeholder.markdown(full_response + citation_text)
-
-    st.session_state.messages.append(
-        {"role": "assistant", "content": full_response}
-    )
+# ---------------- DISPLAY (ONLY HERE) ----------------
+if st.session_state.summary:
+    st.subheader("📄 Summary")
+    st.write(st.session_state.summary)
