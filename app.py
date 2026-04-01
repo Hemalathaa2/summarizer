@@ -43,8 +43,11 @@ if uploaded_files:
         st.success("✅ PDFs loaded successfully")
 
 
-# ---------------- GENERATE SUMMARY BUTTON ----------------
-if st.button("🧠 Generate Summary"):
+# ---------------- GENERATE SUMMARY ----------------
+if "generate_clicked" not in st.session_state:
+    st.session_state.generate_clicked = False
+
+if st.button("Generate Summary"):
     if uploaded_files:
         st.session_state.generate_clicked = True
         st.session_state.summary = None
@@ -52,13 +55,13 @@ if st.button("🧠 Generate Summary"):
         st.warning("Upload PDFs first")
 
 
-# ---------------- GENERATE SUMMARY (RUN ONCE) ----------------
+# ---------------- RUN SUMMARY ONLY ONCE ----------------
 if st.session_state.generate_clicked:
 
     with st.spinner("Generating summary..."):
 
-        placeholder = st.empty()
         summary_text = ""
+        placeholder = st.empty()
 
         for token, _ in st.session_state.rag.stream_summary():
             summary_text += token
@@ -67,9 +70,13 @@ if st.session_state.generate_clicked:
         placeholder.markdown(summary_text)
 
         st.session_state.summary = summary_text
-        st.session_state.generate_clicked = False   # prevents rerun duplication
+        st.session_state.generate_clicked = False
 
 
+# ---------------- DISPLAY SUMMARY ----------------
+if st.session_state.summary:
+    st.subheader("📄 Summary")
+    st.markdown(st.session_state.summary)
 # ---------------- DISPLAY SUMMARY ----------------
 if st.session_state.summary:
     st.subheader("📄 Summary")
