@@ -51,8 +51,7 @@ class RAGEngine:
 
         self.chunks = []
         self.file_hashes = set()
-        self.chunks = []
-        self.file_hashes = set()
+        
         for file in files:
             file.seek(0)
             file_bytes = file.read()
