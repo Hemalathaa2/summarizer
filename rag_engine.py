@@ -189,7 +189,7 @@ Answer clearly using only the context.
         # ========= COMBINED SUMMARY =========
         if similar:
 
-            yield "📚 **Combined Summary (Similar Topics Detected)**\n\n", True
+            yield "📚 **Combined Summary **\n\n", True
 
             MAX_CHARS = 3500
             collected_text = ""
@@ -230,7 +230,7 @@ DOCUMENTS:
         # ========= SEPARATE SUMMARIES =========
         else:
 
-            yield "📄 **Separate Summaries (Different Topics Detected)**\n", True
+            yield "📄 ** Summary**\n", True
 
             docs = {}
             for c in self.chunks:
