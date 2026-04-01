@@ -79,6 +79,22 @@ class RAGEngine:
         if self.embeddings is None:
             raise RuntimeError("Embedding generation failed")
 
+        # ----------------------------
+        # CREATE DOCUMENT EMBEDDINGS
+        # ----------------------------
+        self.doc_embeddings = {}
+
+        for chunk in self.chunks:
+            src = chunk["source"]
+            self.doc_embeddings.setdefault(src, []).append(chunk["text"])
+
+        # average embedding per document
+        for src, texts in self.doc_embeddings.items():
+            emb = self.embedder.encode(
+                texts,
+                normalize_embeddings=True
+            )
+            self.doc_embeddings[src] = np.mean(emb, axis=0)
     # --------------------------------
     # RETRIEVAL
     # --------------------------------
@@ -94,8 +110,31 @@ class RAGEngine:
 
         return [self.chunks[i] for i in top_indices]
 
+   #----------------------------------------
+   #Topic Similarity Checker
+   #----------------------------------------
+    
+    def documents_are_similar(self, threshold=0.75):
+
+        docs = list(self.doc_embeddings.keys())
+
+        if len(docs) <= 1:
+            return False
+
+        vectors = [self.doc_embeddings[d] for d in docs]
+
+        similarities = []
+
+        for i in range(len(vectors)):
+            for j in range(i + 1, len(vectors)):
+                sim = np.dot(vectors[i], vectors[j])
+                similarities.append(sim)
+
+        avg_similarity = np.mean(similarities)
+
+        return avg_similarity >= threshold
     # --------------------------------
-    # PROMPT BUILDER
+    # PROMPT BUILDER   
     # --------------------------------
     def build_prompt(self, query, contexts):
 
@@ -165,46 +204,44 @@ Answer clearly using only the context.
     # --------------------------------
     def stream_summary(self):
 
-    # ✅ token-safe limit for llama3-8b-8192
-        MAX_CHARS = 6000   # SAFE (~1500 tokens)
-
         if not self.chunks:
             yield "⚠️ No documents loaded.", False
             return
 
-        collected_text = ""
+        similar = self.documents_are_similar()
 
-    # ✅ build limited context
-        for c in self.chunks:
-            text = c.get("text", "").strip()
+    # --------------------------------
+    # CASE 1: SIMILAR TOPICS → ONE SUMMARY
+    # --------------------------------
+        if similar:
 
-            if not text:
-                continue
+            yield "📚 **Combined Summary (Similar Topics Detected)**\n\n", True
 
-            if len(collected_text) + len(text) > MAX_CHARS:
-                break
+            MAX_CHARS = 6000
+            collected_text = ""
 
-            collected_text += text + "\n"
+            for c in self.chunks:
+                text = c["text"]
 
-        if not collected_text.strip():
-            yield "⚠️ No readable text for summarization.", False
-            return
+                if len(collected_text) + len(text) > MAX_CHARS:
+                    break
 
-        prompt = f"""
-    Summarize the document clearly and concisely.
+                collected_text += text + "\n"
 
-    Document:
+            prompt = f"""
+    Summarize the following documents into ONE coherent summary.
+
+    Documents:
     {collected_text}
     """
 
-        try:
             stream = self.client.chat.completions.create(
                 model=MODEL_NAME,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.3,
-                max_tokens=800,   # ✅ prevent overflow
+                max_tokens=800,
                 stream=True,
-        )
+            )
 
             for chunk in stream:
                 delta = chunk.choices[0].delta
@@ -213,5 +250,46 @@ Answer clearly using only the context.
                 if token:
                     yield token, True
 
-        except Exception as e:
-            yield f"⚠️ Groq API Error: {str(e)}", False
+    # --------------------------------
+    # CASE 2: DIFFERENT TOPICS → SEPARATE
+    # --------------------------------
+        else:
+
+            yield "📄 **Separate Summaries (Different Topics Detected)**\n", True
+
+            docs = {}
+            for c in self.chunks:
+                docs.setdefault(c["source"], []).append(c["text"])
+
+            for filename, texts in docs.items():
+
+                yield f"\n\n### {filename}\n\n", True
+
+                collected_text = ""
+                MAX_CHARS = 6000
+    
+                for t in texts:
+                    if len(collected_text) + len(t) > MAX_CHARS:
+                        break
+                    collected_text += t + "\n"
+
+                prompt = f"""
+    Summarize this document clearly:
+    
+    {collected_text}
+    """
+    
+                stream = self.client.chat.completions.create(
+                    model=MODEL_NAME,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.3,
+                    max_tokens=800,
+                    stream=True,
+                )
+    
+                for chunk in stream:
+                    delta = chunk.choices[0].delta
+                    token = getattr(delta, "content", "") if delta else ""
+    
+                    if token:
+                        yield token, True
