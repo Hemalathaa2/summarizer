@@ -17,6 +17,9 @@ if "messages" not in st.session_state:
 if "indexed" not in st.session_state:
     st.session_state.indexed = False
 
+if "summary_generated" not in st.session_state:
+    st.session_state.summary_generated = False
+
 # -------------------------
 # FILE UPLOAD
 # -------------------------
@@ -32,12 +35,15 @@ if files and not st.session_state.indexed:
         st.session_state.indexed = True
     st.success("PDFs Ready!")
 
-
-
-# GENERATE SUMMARY BUTTON
+# -------------------------
+# SUMMARY BUTTON
 # -------------------------
 if st.session_state.indexed:
+
     if st.button("🧠 Generate Document Summary"):
+        st.session_state.summary_generated = True
+
+    if st.session_state.summary_generated:
 
         with st.chat_message("assistant"):
 
@@ -54,6 +60,8 @@ if st.session_state.indexed:
             {"role": "assistant", "content": summary_text}
         )
 
+        st.session_state.summary_generated = False
+
 # -------------------------
 # CHAT HISTORY DISPLAY
 # -------------------------
@@ -69,7 +77,6 @@ query = st.chat_input("Ask something about PDFs...")
 if query:
 
     rag = st.session_state.rag
-    query = rag.reformulate_query(query)
 
     st.session_state.messages.append(
         {"role": "user", "content": query}
@@ -96,4 +103,3 @@ if query:
     st.session_state.messages.append(
         {"role": "assistant", "content": full_response}
     )
-
