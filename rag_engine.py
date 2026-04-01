@@ -133,7 +133,8 @@ Answer clearly using only the context.
         full_text = ""
 
         for chunk in stream:
-            token = chunk.choices[0].delta.content or ""
+            delta = chunk.choices[0].delta
+            token = getattr(delta, "content", "") if delta else ""
             full_text += token
             yield token, contexts
 
