@@ -165,37 +165,44 @@ Answer clearly using only the context.
     # --------------------------------
     def stream_summary(self):
 
-        MAX_CHARS = 12000
+    # ✅ token-safe limit for llama3-8b-8192
+    MAX_CHARS = 6000   # SAFE (~1500 tokens)
 
-        collected_text = ""
+    if not self.chunks:
+        yield "⚠️ No documents loaded.", False
+        return
 
-        for c in self.chunks:
-            text = c.get("text", "").strip()
+    collected_text = ""
 
-            if not text:
-                continue
+    # ✅ build limited context
+    for c in self.chunks:
+        text = c.get("text", "").strip()
 
-            if len(collected_text) + len(text) > MAX_CHARS:
-                break
+        if not text:
+            continue
 
-            collected_text += text + "\n"
+        if len(collected_text) + len(text) > MAX_CHARS:
+            break
 
-        # ✅ prevent empty prompt error
-        if not collected_text.strip():
-            yield "⚠️ No text available for summarization.", False
-            return
+        collected_text += text + "\n"
 
-        prompt = f"""
-Summarize the following document clearly:
+    if not collected_text.strip():
+        yield "⚠️ No readable text for summarization.", False
+        return
 
+    prompt = f"""
+Summarize the document clearly and concisely.
+
+Document:
 {collected_text}
 """
 
+    try:
         stream = self.client.chat.completions.create(
             model=MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
-            max_tokens=1024,
+            max_tokens=800,   # ✅ prevent overflow
             stream=True,
         )
 
@@ -205,3 +212,6 @@ Summarize the following document clearly:
 
             if token:
                 yield token, True
+
+    except Exception as e:
+        yield f"⚠️ Groq API Error: {str(e)}", False
