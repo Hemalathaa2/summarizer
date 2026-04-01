@@ -277,8 +277,10 @@ DOCUMENT:
                     token = getattr(chunk.choices[0].delta, "content", "")
                     if token:
                         yield token, True
-  def clear(self):
-        """Reset stored PDFs and embeddings"""
-        self.chunks = []
-        self.embeddings = []
+
+
+"""Reset stored PDFs and embeddings"""
+      def clear(self):
+          self.chunks = []
+          self.embeddings = []
         
