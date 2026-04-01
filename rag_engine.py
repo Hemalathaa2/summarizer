@@ -14,7 +14,6 @@ class RAGEngine:
 
     def __init__(self):
 
-        # ✅ Groq client (CORRECT PLACE)
         self.client = Groq(
             api_key=st.secrets["GROQ_API_KEY"]
         )
@@ -51,6 +50,7 @@ class RAGEngine:
         self.chunks = []
 
         for file in files:
+            file.seek(0)  # ✅ FIX duplicate reading issue
             doc = fitz.open(stream=file.read(), filetype="pdf")
 
             for page_num, page in enumerate(doc):
@@ -76,25 +76,17 @@ class RAGEngine:
             normalize_embeddings=True
         )
 
-        if self.embeddings is None:
-            raise RuntimeError("Embedding generation failed")
-
-        # ----------------------------
-        # CREATE DOCUMENT EMBEDDINGS
-        # ----------------------------
+        # -------- Document embeddings (for similarity check)
         self.doc_embeddings = {}
 
         for chunk in self.chunks:
             src = chunk["source"]
             self.doc_embeddings.setdefault(src, []).append(chunk["text"])
 
-        # average embedding per document
         for src, texts in self.doc_embeddings.items():
-            emb = self.embedder.encode(
-                texts,
-                normalize_embeddings=True
-            )
+            emb = self.embedder.encode(texts, normalize_embeddings=True)
             self.doc_embeddings[src] = np.mean(emb, axis=0)
+
     # --------------------------------
     # RETRIEVAL
     # --------------------------------
@@ -110,10 +102,9 @@ class RAGEngine:
 
         return [self.chunks[i] for i in top_indices]
 
-   #----------------------------------------
-   #Topic Similarity Checker
-   #----------------------------------------
-    
+    # --------------------------------
+    # TOPIC SIMILARITY CHECK
+    # --------------------------------
     def documents_are_similar(self, threshold=0.75):
 
         docs = list(self.doc_embeddings.keys())
@@ -130,11 +121,10 @@ class RAGEngine:
                 sim = np.dot(vectors[i], vectors[j])
                 similarities.append(sim)
 
-        avg_similarity = np.mean(similarities)
+        return np.mean(similarities) >= threshold
 
-        return avg_similarity >= threshold
     # --------------------------------
-    # PROMPT BUILDER   
+    # PROMPT BUILDER
     # --------------------------------
     def build_prompt(self, query, contexts):
 
@@ -184,23 +174,7 @@ Answer clearly using only the context.
         self.chat_history.append(f"Assistant: {full_text}")
 
     # --------------------------------
-    # FOLLOW-UP QUERY HANDLING
-    # --------------------------------
-    def reformulate_query(self, query):
-
-        follow_words = ["explain more", "tell more", "why", "how"]
-
-        if any(w in query.lower() for w in follow_words):
-
-            for msg in reversed(self.chat_history):
-                if msg.startswith("User:"):
-                    last_question = msg.replace("User:", "").strip()
-                    return f"{query} (regarding: {last_question})"
-
-        return query
-
-    # --------------------------------
-    # STREAM SUMMARY (GROQ SAFE)
+    # STREAM SUMMARY
     # --------------------------------
     def stream_summary(self):
 
@@ -210,49 +184,53 @@ Answer clearly using only the context.
 
         similar = self.documents_are_similar()
 
-    # --------------------------------
-    # CASE 1: SIMILAR TOPICS → ONE SUMMARY
-    # --------------------------------
+        # ==============================
+        # CASE 1 — COMBINED SUMMARY
+        # ==============================
         if similar:
 
             yield "📚 **Combined Summary (Similar Topics Detected)**\n\n", True
 
-            MAX_CHARS = 6000
+            MAX_CHARS = 3500
             collected_text = ""
 
             for c in self.chunks:
                 text = c["text"]
-
                 if len(collected_text) + len(text) > MAX_CHARS:
                     break
-
                 collected_text += text + "\n"
 
             prompt = f"""
-    Summarize the following documents into ONE coherent summary.
+You are an expert document summarizer.
 
-    Documents:
-    {collected_text}
-    """
+Create a concise summary (5–8 bullet points).
+
+STRICT RULES:
+- Do NOT copy sentences.
+- Do NOT repeat document text.
+- Compress information.
+- Focus only on key ideas.
+
+DOCUMENTS:
+{collected_text}
+"""
 
             stream = self.client.chat.completions.create(
                 model=MODEL_NAME,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.3,
-                max_tokens=800,
+                max_tokens=600,
                 stream=True,
             )
 
             for chunk in stream:
-                delta = chunk.choices[0].delta
-                token = getattr(delta, "content", "") if delta else ""
-
+                token = getattr(chunk.choices[0].delta, "content", "")
                 if token:
                     yield token, True
 
-    # --------------------------------
-    # CASE 2: DIFFERENT TOPICS → SEPARATE
-    # --------------------------------
+        # ==============================
+        # CASE 2 — SEPARATE SUMMARIES
+        # ==============================
         else:
 
             yield "📄 **Separate Summaries (Different Topics Detected)**\n", True
@@ -265,31 +243,37 @@ Answer clearly using only the context.
 
                 yield f"\n\n### {filename}\n\n", True
 
+                MAX_CHARS = 3500
                 collected_text = ""
-                MAX_CHARS = 6000
-    
+
                 for t in texts:
                     if len(collected_text) + len(t) > MAX_CHARS:
                         break
                     collected_text += t + "\n"
 
                 prompt = f"""
-    Summarize this document clearly:
-    
-    {collected_text}
-    """
-    
+You are an expert document summarizer.
+
+Summarize this document in 5–8 concise bullet points.
+
+Rules:
+- Do NOT copy text.
+- Do NOT rewrite paragraphs.
+- Extract only important concepts.
+
+DOCUMENT:
+{collected_text}
+"""
+
                 stream = self.client.chat.completions.create(
                     model=MODEL_NAME,
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.3,
-                    max_tokens=800,
+                    max_tokens=600,
                     stream=True,
                 )
-    
+
                 for chunk in stream:
-                    delta = chunk.choices[0].delta
-                    token = getattr(delta, "content", "") if delta else ""
-    
+                    token = getattr(chunk.choices[0].delta, "content", "")
                     if token:
                         yield token, True
