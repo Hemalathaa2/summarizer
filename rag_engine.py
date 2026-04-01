@@ -73,7 +73,8 @@ class RAGEngine:
             texts,
             normalize_embeddings=True
         )
-
+        if self.embeddings is None:
+            raise RuntimeError("Embedding generation failed")
     # --------------------------------
     # RETRIEVAL (Cosine Similarity)
     # --------------------------------
@@ -158,12 +159,28 @@ Answer clearly using only the context.
     # --------------------------------
     # STREAM SUMMARY
     # --------------------------------
-    def stream_summary(self):
+    # --------------------------------
+# STREAM SUMMARY (FIXED)
+# --------------------------------
+def stream_summary(self):
 
-        texts = [c["text"] for c in self.chunks[:15]]
-        context_text = "\n\n".join(texts)
+    if not self.chunks:
+        yield "No documents loaded.", []
+        return
 
-        prompt = f"""
+    # ✅ LIMIT CONTEXT SIZE (critical fix)
+    MAX_CHARS = 4000
+
+    collected_text = ""
+    selected_chunks = []
+
+    for c in self.chunks:
+        if len(collected_text) + len(c["text"]) > MAX_CHARS:
+            break
+        collected_text += c["text"] + "\n\n"
+        selected_chunks.append(c)
+
+    prompt = f"""
 Provide a structured summary:
 
 - Main topics
@@ -172,15 +189,17 @@ Provide a structured summary:
 - Conclusion
 
 Document:
-{context_text}
+{collected_text}
 """
 
-        stream = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[{"role": "user", "content": prompt}],
-            stream=True,
-        )
+    stream = client.chat.completions.create(
+        model=MODEL_NAME,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.2,
+        max_tokens=800,
+        stream=True,
+    )
 
-        for chunk in stream:
-            token = chunk.choices[0].delta.content or ""
-            yield token, self.chunks[:3]
+    for chunk in stream:
+        token = chunk.choices[0].delta.content or ""
+        yield token, selected_chunks[:3]
