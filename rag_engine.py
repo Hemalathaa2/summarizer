@@ -166,52 +166,52 @@ Answer clearly using only the context.
     def stream_summary(self):
 
     # ✅ token-safe limit for llama3-8b-8192
-    MAX_CHARS = 6000   # SAFE (~1500 tokens)
+        MAX_CHARS = 6000   # SAFE (~1500 tokens)
 
-    if not self.chunks:
-        yield "⚠️ No documents loaded.", False
-        return
+        if not self.chunks:
+            yield "⚠️ No documents loaded.", False
+            return
 
-    collected_text = ""
+        collected_text = ""
 
     # ✅ build limited context
-    for c in self.chunks:
-        text = c.get("text", "").strip()
+        for c in self.chunks:
+            text = c.get("text", "").strip()
 
-        if not text:
-            continue
+            if not text:
+                continue
 
-        if len(collected_text) + len(text) > MAX_CHARS:
-            break
+            if len(collected_text) + len(text) > MAX_CHARS:
+                break
 
-        collected_text += text + "\n"
+            collected_text += text + "\n"
 
-    if not collected_text.strip():
-        yield "⚠️ No readable text for summarization.", False
-        return
+        if not collected_text.strip():
+            yield "⚠️ No readable text for summarization.", False
+            return
 
-    prompt = f"""
-Summarize the document clearly and concisely.
+        prompt = f"""
+    Summarize the document clearly and concisely.
 
-Document:
-{collected_text}
-"""
+    Document:
+    {collected_text}
+    """
 
-    try:
-        stream = self.client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
-            max_tokens=800,   # ✅ prevent overflow
-            stream=True,
+        try:
+            stream = self.client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3,
+                max_tokens=800,   # ✅ prevent overflow
+                stream=True,
         )
 
-        for chunk in stream:
-            delta = chunk.choices[0].delta
-            token = getattr(delta, "content", "") if delta else ""
+            for chunk in stream:
+                delta = chunk.choices[0].delta
+                token = getattr(delta, "content", "") if delta else ""
 
-            if token:
-                yield token, True
+                if token:
+                    yield token, True
 
-    except Exception as e:
-        yield f"⚠️ Groq API Error: {str(e)}", False
+        except Exception as e:
+            yield f"⚠️ Groq API Error: {str(e)}", False
