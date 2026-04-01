@@ -102,28 +102,27 @@ class RAGEngine:
     # STREAM DOCUMENT SUMMARY
     # --------------------------------
     def stream_summary(self):
+        texts = [c["text"] for c in self.chunks[:15]]
+        context_text = "\n\n".join(texts)
 
-    texts = [c["text"] for c in self.chunks[:15]]
-    context_text = "\n\n".join(texts)
+        prompt = f"""
+    Provide a structured summary:
+    - Main topics
+    - Key insights
+    - Findings
+    - Conclusion
 
-    prompt = f"""
-Provide a structured summary:
-- Main topics
-- Key insights
-- Findings
-- Conclusion
+    Document:
+    {context_text}
+    """
 
-Document:
-{context_text}
-"""
-
-    stream = client.chat.completions.create(
-        model=MODEL_NAME,
-        messages=[{"role": "user", "content": prompt}],
-        stream=True,
+        stream = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[{"role": "user", "content": prompt}],
+            stream=True,
     )
 
-    for chunk in stream:
-        token = chunk.choices[0].delta.content or ""
-        yield token, self.chunks[:3]
+        for chunk in stream:
+            token = chunk.choices[0].delta.content or ""
+            yield token, self.chunks[:3]
 
