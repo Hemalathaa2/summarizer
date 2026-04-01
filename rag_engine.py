@@ -5,18 +5,19 @@ from groq import Groq
 import streamlit as st
 
 # -----------------------------
-# GROQ CONFIG (Streamlit Secret)
+# GROQ CONFIG
 # -----------------------------
 MODEL_NAME = "llama3-8b-8192"
-
-client = Groq(
-    api_key=st.secrets["GROQ_API_KEY"]
-)
 
 
 class RAGEngine:
 
     def __init__(self):
+
+        # ✅ Groq client (CORRECT PLACE)
+        self.client = Groq(
+            api_key=st.secrets["GROQ_API_KEY"]
+        )
 
         self.embedder = SentenceTransformer(
             "all-MiniLM-L6-v2",
@@ -31,6 +32,7 @@ class RAGEngine:
     # TEXT SPLITTER
     # --------------------------------
     def split_text(self, text, chunk_size=500, overlap=100):
+
         chunks = []
         start = 0
 
@@ -73,10 +75,12 @@ class RAGEngine:
             texts,
             normalize_embeddings=True
         )
+
         if self.embeddings is None:
             raise RuntimeError("Embedding generation failed")
+
     # --------------------------------
-    # RETRIEVAL (Cosine Similarity)
+    # RETRIEVAL
     # --------------------------------
     def retrieve(self, query, top_k=4):
 
@@ -86,7 +90,6 @@ class RAGEngine:
         )[0]
 
         scores = np.dot(self.embeddings, query_embedding)
-
         top_indices = np.argsort(scores)[-top_k:][::-1]
 
         return [self.chunks[i] for i in top_indices]
@@ -101,7 +104,7 @@ class RAGEngine:
             for c in contexts
         )
 
-        prompt = f"""
+        return f"""
 You are an AI assistant answering questions from documents.
 
 Context:
@@ -112,7 +115,6 @@ Question:
 
 Answer clearly using only the context.
 """
-        return prompt
 
     # --------------------------------
     # STREAM CHAT ANSWER
@@ -122,19 +124,20 @@ Answer clearly using only the context.
         contexts = self.retrieve(query)
         prompt = self.build_prompt(query, contexts)
 
-        stream = client.chat.completions.create(
-    model=MODEL_NAME,
-    messages=[{"role": "user", "content": prompt}],
-    temperature=0.2,
-    max_tokens=1024,
-    stream=True,
-)
+        stream = self.client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2,
+            max_tokens=1024,
+            stream=True,
+        )
 
         full_text = ""
 
         for chunk in stream:
             delta = chunk.choices[0].delta
             token = getattr(delta, "content", "") if delta else ""
+
             full_text += token
             yield token, contexts
 
@@ -158,72 +161,47 @@ Answer clearly using only the context.
         return query
 
     # --------------------------------
-    # STREAM SUMMARY
+    # STREAM SUMMARY (GROQ SAFE)
     # --------------------------------
-    # --------------------------------
-# STREAM SUMMARY (FIXED)
-# --------------------------------
-# --------------------------------
-# STREAM SUMMARY (GROQ SAFE)
-# --------------------------------
-def stream_summary(self):
+    def stream_summary(self):
 
-    if not self.chunks:
-        yield "No documents loaded.", []
-        return
+        MAX_CHARS = 12000
 
-    MAX_CHARS = 3500
+        collected_text = ""
 
-    collected_text = ""
-    selected_chunks = []
+        for c in self.chunks:
+            text = c.get("text", "").strip()
 
-    for c in self.chunks:
-        text_piece = c.get("text", "")
+            if not text:
+                continue
 
-        if not text_piece:
-            continue
+            if len(collected_text) + len(text) > MAX_CHARS:
+                break
 
-        if len(collected_text) + len(text_piece) > MAX_CHARS:
-            break
+            collected_text += text + "\n"
 
-        collected_text += text_piece + "\n\n"
-        selected_chunks.append(c)
+        # ✅ prevent empty prompt error
+        if not collected_text.strip():
+            yield "⚠️ No text available for summarization.", False
+            return
 
-    prompt = f"""
-Provide a structured summary:
+        prompt = f"""
+Summarize the following document clearly:
 
-- Main topics
-- Key insights
-- Findings
-- Conclusion
-
-Document:
 {collected_text}
 """
 
-    try:
-        stream = client.chat.completions.create(
+        stream = self.client.chat.completions.create(
             model=MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,
-            max_tokens=700,
+            temperature=0.3,
+            max_tokens=1024,
             stream=True,
         )
 
         for chunk in stream:
-            # ✅ GROQ SAFE TOKEN EXTRACTION
-            if not chunk.choices:
-                continue
-
             delta = chunk.choices[0].delta
-
-            if not delta:
-                continue
-
-            token = getattr(delta, "content", None)
+            token = getattr(delta, "content", "") if delta else ""
 
             if token:
-                yield token, selected_chunks[:3]
-
-    except Exception as e:
-        yield f"⚠️ Summary generation failed: {str(e)}", []
+                yield token, True
