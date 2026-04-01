@@ -121,11 +121,13 @@ Answer clearly using only the context.
         contexts = self.retrieve(query)
         prompt = self.build_prompt(query, contexts)
 
-        stream = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[{"role": "user", "content": prompt}],
-            stream=True,
-        )
+       stream = client.chat.completions.create(
+    model=MODEL_NAME,
+    messages=[{"role": "user", "content": prompt}],
+    temperature=0.2,
+    max_tokens=1024,
+    stream=True,
+)
 
         full_text = ""
 
