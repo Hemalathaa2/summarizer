@@ -121,7 +121,7 @@ Answer clearly using only the context.
         contexts = self.retrieve(query)
         prompt = self.build_prompt(query, contexts)
 
-       stream = client.chat.completions.create(
+        stream = client.chat.completions.create(
     model=MODEL_NAME,
     messages=[{"role": "user", "content": prompt}],
     temperature=0.2,
