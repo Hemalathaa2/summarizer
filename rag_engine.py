@@ -3,6 +3,7 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 from groq import Groq
 import streamlit as st
+import hashlib
 
 # -----------------------------
 # GROQ CONFIG
@@ -49,44 +50,17 @@ class RAGEngine:
     def load_pdfs(self, files):
 
         self.chunks = []
-
+        self.file_hashes = set()
+        self.chunks = []
+        self.file_hashes = set()
         for file in files:
-            file.seek(0)  # ✅ prevents duplicate reading
-            doc = fitz.open(stream=file.read(), filetype="pdf")
+            file.seek(0)
+            file_bytes = file.read()
+            # ---------- DUPLICATE CHECK ----------
+            file_hash = hashlib.md5(file_bytes).hexdigest()
 
-            for page_num, page in enumerate(doc):
-
-                text = page.get_text().strip()
-                if not text:
-                    continue
-
-                for chunk in self.split_text(text):
-                    self.chunks.append({
-                        "text": chunk,
-                        "source": file.name,
-                        "page": page_num + 1
-                    })
-
-        if not self.chunks:
-            raise ValueError("No readable text found in PDFs.")
-
-        texts = [c["text"] for c in self.chunks]
-
-        self.embeddings = self.embedder.encode(
-            texts,
-            normalize_embeddings=True
-        )
-
-        # -------- Document embeddings
-        self.doc_embeddings = {}
-
-        for chunk in self.chunks:
-            src = chunk["source"]
-            self.doc_embeddings.setdefault(src, []).append(chunk["text"])
-
-        for src, texts in self.doc_embeddings.items():
-            emb = self.embedder.encode(texts, normalize_embeddings=True)
-            self.doc_embeddings[src] = np.mean(emb, axis=0)
+            if file_hash in self.file_hashes:
+                continue   # ✅
 
     # --------------------------------
     # RETRIEVAL
