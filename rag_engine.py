@@ -25,6 +25,7 @@ class RAGEngine:
 
         self.chunks = []
         self.embeddings = None
+        self.doc_embeddings = {}
         self.chat_history = []
 
     # --------------------------------
@@ -50,7 +51,7 @@ class RAGEngine:
         self.chunks = []
 
         for file in files:
-            file.seek(0)  # ✅ FIX duplicate reading issue
+            file.seek(0)  # ✅ prevents duplicate reading
             doc = fitz.open(stream=file.read(), filetype="pdf")
 
             for page_num, page in enumerate(doc):
@@ -76,7 +77,7 @@ class RAGEngine:
             normalize_embeddings=True
         )
 
-        # -------- Document embeddings (for similarity check)
+        # -------- Document embeddings
         self.doc_embeddings = {}
 
         for chunk in self.chunks:
@@ -172,7 +173,7 @@ Answer clearly using only the context.
 
         self.chat_history.append(f"User: {query}")
         self.chat_history.append(f"Assistant: {full_text}")
-        
+
     # --------------------------------
     # STREAM SUMMARY
     # --------------------------------
@@ -184,9 +185,7 @@ Answer clearly using only the context.
 
         similar = self.documents_are_similar()
 
-        # ==============================
-        # CASE 1 — COMBINED SUMMARY
-        # ==============================
+        # ========= COMBINED SUMMARY =========
         if similar:
 
             yield "📚 **Combined Summary (Similar Topics Detected)**\n\n", True
@@ -206,10 +205,9 @@ You are an expert document summarizer.
 Create a concise summary (5–8 bullet points).
 
 STRICT RULES:
-- Do NOT copy sentences.
-- Do NOT repeat document text.
-- Compress information.
-- Focus only on key ideas.
+- Do NOT copy sentences
+- Compress information
+- Focus only on key ideas
 
 DOCUMENTS:
 {collected_text}
@@ -228,9 +226,7 @@ DOCUMENTS:
                 if token:
                     yield token, True
 
-        # ==============================
-        # CASE 2 — SEPARATE SUMMARIES
-        # ==============================
+        # ========= SEPARATE SUMMARIES =========
         else:
 
             yield "📄 **Separate Summaries (Different Topics Detected)**\n", True
@@ -257,9 +253,8 @@ You are an expert document summarizer.
 Summarize this document in 5–8 concise bullet points.
 
 Rules:
-- Do NOT copy text.
-- Do NOT rewrite paragraphs.
-- Extract only important concepts.
+- Do NOT copy text
+- Extract only important concepts
 
 DOCUMENT:
 {collected_text}
@@ -278,9 +273,12 @@ DOCUMENT:
                     if token:
                         yield token, True
 
-
-"""Reset stored PDFs and embeddings"""
-      def clear(self):
-          self.chunks = []
-          self.embeddings = []
-        
+    # --------------------------------
+    # CLEAR MEMORY (FIXED INDENTATION)
+    # --------------------------------
+    def clear(self):
+        """Reset stored PDFs and embeddings"""
+        self.chunks = []
+        self.embeddings = None
+        self.doc_embeddings = {}
+        self.chat_history = []
