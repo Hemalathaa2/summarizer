@@ -57,25 +57,24 @@ class RAGEngine:
     # STREAM CHAT ANSWER
     # --------------------------------
     def stream_answer(self, query):
+        contexts = self.retrieve(query)
+        prompt = self.build_prompt(query, contexts)
 
-    contexts = self.retrieve(query)
-    prompt = self.build_prompt(query, contexts)
+        stream = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[{"role": "user", "content": prompt}],
+            stream=True,
+        )
 
-    stream = client.chat.completions.create(
-        model=MODEL_NAME,
-        messages=[{"role": "user", "content": prompt}],
-        stream=True,
-    )
+        full_text = ""
 
-    full_text = ""
+        for chunk in stream:
+            token = chunk.choices[0].delta.content or ""
+            full_text += token
+            yield token, contexts
 
-    for chunk in stream:
-        token = chunk.choices[0].delta.content or ""
-        full_text += token
-        yield token, contexts
-
-    self.chat_history.append(f"User: {query}")
-    self.chat_history.append(f"Assistant: {full_text}")
+        self.chat_history.append(f"User: {query}")
+        self.chat_history.append(f"Assistant: {full_text}")
 
     # --------------------------------
     # FOLLOW-UP QUERY UNDERSTANDING
