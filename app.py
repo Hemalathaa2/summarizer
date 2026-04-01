@@ -30,26 +30,39 @@ if uploaded_files:
         st.session_state.files_hash = new_hash
         st.session_state.summary = None
 
-        # Reset RAG memory
+        # ✅ clear previous PDFs
         st.session_state.rag.clear()
 
-        # Load PDFs
-        for file in uploaded_files:
-            st.session_state.rag.add_pdf(file)
+        # ✅ load ALL PDFs together (IMPORTANT FIX)
+        with st.spinner("Indexing PDFs..."):
+            st.session_state.rag.load_pdfs(uploaded_files)
 
         st.success("✅ PDFs loaded successfully")
 
 # ---------------- GENERATE SUMMARY ----------------
 if st.button("Generate Summary"):
+
     if uploaded_files:
+
         with st.spinner("Generating summary..."):
-            st.session_state.summary = (
-                st.session_state.rag.generate_summary()
-            )
+
+            summary_text = ""
+            placeholder = st.empty()
+
+            # ✅ stream summary correctly
+            for token, _ in st.session_state.rag.stream_summary():
+                summary_text += token
+                placeholder.markdown(summary_text + "▌")
+
+            placeholder.markdown(summary_text)
+
+            # store latest summary
+            st.session_state.summary = summary_text
+
     else:
         st.warning("Upload PDFs first")
 
-# ---------------- DISPLAY (ONLY HERE) ----------------
+# ---------------- DISPLAY SUMMARY ----------------
 if st.session_state.summary:
     st.subheader("📄 Summary")
-    st.write(st.session_state.summary)
+    st.markdown(st.session_state.summary)
