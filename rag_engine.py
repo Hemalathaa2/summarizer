@@ -31,7 +31,6 @@ class RAGEngine:
     # TEXT SPLITTER
     # --------------------------------
     def split_text(self, text, chunk_size=500, overlap=100):
-
         chunks = []
         start = 0
 
