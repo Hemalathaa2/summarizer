@@ -77,7 +77,4 @@ if st.session_state.generate_clicked:
 if st.session_state.summary:
     st.subheader("📄 Summary")
     st.markdown(st.session_state.summary)
-# ---------------- DISPLAY SUMMARY ----------------
-if st.session_state.summary:
-    st.subheader("📄 Summary")
-    st.markdown(st.session_state.summary)
+
