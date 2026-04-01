@@ -172,11 +172,7 @@ Answer clearly using only the context.
 
         self.chat_history.append(f"User: {query}")
         self.chat_history.append(f"Assistant: {full_text}")
-
-    def clear(self):
-        self.chunks = []
-        self.embeddings = []
-    
+        
     # --------------------------------
     # STREAM SUMMARY
     # --------------------------------
@@ -281,4 +277,8 @@ DOCUMENT:
                     token = getattr(chunk.choices[0].delta, "content", "")
                     if token:
                         yield token, True
-  
+  def clear(self):
+        """Reset stored PDFs and embeddings"""
+        self.chunks = []
+        self.embeddings = []
+        
