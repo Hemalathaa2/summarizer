@@ -6,7 +6,7 @@ st.set_page_config(page_title="PDF AI Assistant")
 st.title("📚 Multi-PDF AI Knowledge Assistant")
 
 # -------------------------
-# SESSION STATE
+# SESSION STATE INIT
 # -------------------------
 if "rag" not in st.session_state:
     st.session_state.rag = RAGEngine()
@@ -14,14 +14,11 @@ if "rag" not in st.session_state:
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-if "indexed" not in st.session_state:
-    st.session_state.indexed = False
-
-if "summary_generated" not in st.session_state:
-    st.session_state.summary_generated = False
+if "last_uploaded_names" not in st.session_state:
+    st.session_state.last_uploaded_names = []
 
 # -------------------------
-# FILE UPLOAD
+# FILE UPLOADER
 # -------------------------
 files = st.file_uploader(
     "Upload PDFs",
@@ -29,21 +26,39 @@ files = st.file_uploader(
     accept_multiple_files=True
 )
 
-if files and not st.session_state.indexed:
-    with st.spinner("Indexing PDFs..."):
-        st.session_state.rag.load_pdfs(files)
-        st.session_state.indexed = True
-    st.success("PDFs Ready!")
+# -------------------------
+# ✅ DETECT NEW UPLOADS
+# -------------------------
+if files:
+
+    current_names = [f.name for f in files]
+
+    # If uploaded files changed → RESET EVERYTHING
+    if current_names != st.session_state.last_uploaded_names:
+
+        # reset RAG completely
+        st.session_state.rag = RAGEngine()
+
+        # clear old summaries/chat
+        st.session_state.messages = []
+
+        # remember uploaded files
+        st.session_state.last_uploaded_names = current_names
+
+        with st.spinner("Indexing PDFs..."):
+            st.session_state.rag.load_pdfs(files)
+
+        st.success("PDFs Ready!")
 
 # -------------------------
 # SUMMARY BUTTON
 # -------------------------
-if st.session_state.indexed:
+if files:
 
     if st.button("🧠 Generate Document Summary"):
-        st.session_state.summary_generated = True
 
-    if st.session_state.summary_generated:
+        # ✅ clear previous summaries automatically
+        st.session_state.messages = []
 
         with st.chat_message("assistant"):
 
@@ -60,17 +75,15 @@ if st.session_state.indexed:
             {"role": "assistant", "content": summary_text}
         )
 
-        st.session_state.summary_generated = False
-
 # -------------------------
-# CHAT HISTORY DISPLAY
+# DISPLAY CHAT HISTORY
 # -------------------------
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
 # -------------------------
-# USER CHAT INPUT
+# CHAT INPUT
 # -------------------------
 query = st.chat_input("Ask something about PDFs...")
 
