@@ -162,22 +162,30 @@ Answer clearly using only the context.
     # --------------------------------
 # STREAM SUMMARY (FIXED)
 # --------------------------------
+# --------------------------------
+# STREAM SUMMARY (GROQ SAFE)
+# --------------------------------
 def stream_summary(self):
 
     if not self.chunks:
         yield "No documents loaded.", []
         return
 
-    # ✅ LIMIT CONTEXT SIZE (critical fix)
-    MAX_CHARS = 4000
+    MAX_CHARS = 3500
 
     collected_text = ""
     selected_chunks = []
 
     for c in self.chunks:
-        if len(collected_text) + len(c["text"]) > MAX_CHARS:
+        text_piece = c.get("text", "")
+
+        if not text_piece:
+            continue
+
+        if len(collected_text) + len(text_piece) > MAX_CHARS:
             break
-        collected_text += c["text"] + "\n\n"
+
+        collected_text += text_piece + "\n\n"
         selected_chunks.append(c)
 
     prompt = f"""
@@ -192,14 +200,29 @@ Document:
 {collected_text}
 """
 
-    stream = client.chat.completions.create(
-        model=MODEL_NAME,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.2,
-        max_tokens=800,
-        stream=True,
-    )
+    try:
+        stream = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2,
+            max_tokens=700,
+            stream=True,
+        )
 
-    for chunk in stream:
-        token = chunk.choices[0].delta.content or ""
-        yield token, selected_chunks[:3]
+        for chunk in stream:
+            # ✅ GROQ SAFE TOKEN EXTRACTION
+            if not chunk.choices:
+                continue
+
+            delta = chunk.choices[0].delta
+
+            if not delta:
+                continue
+
+            token = getattr(delta, "content", None)
+
+            if token:
+                yield token, selected_chunks[:3]
+
+    except Exception as e:
+        yield f"⚠️ Summary generation failed: {str(e)}", []
