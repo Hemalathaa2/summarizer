@@ -2,7 +2,7 @@ import streamlit as st
 from rag_engine import RAGEngine
 
 st.set_page_config(page_title="PDF AI Assistant")
-st.title("📚 Multi-PDF AI Knowledge Assistant")
+st.title("📚 Multi-PDF Summarizer")
 
 # ---------------- SESSION STATE ----------------
 if "rag" not in st.session_state:
