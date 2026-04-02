@@ -82,29 +82,28 @@ class RAGEngine:
     # -------- RETRIEVE --------
     def retrieve(self, query, top_k=4, source_filter=None):
 
-    # Filter chunks by selected PDF
         filtered_chunks = self.chunks
-    
+
         if source_filter:
             filtered_chunks = [
                 c for c in self.chunks if c["source"] == source_filter
             ]
-    
+
         texts = [c["text"] for c in filtered_chunks]
-    
+
         embeddings = self.embedder.encode(
             texts,
             normalize_embeddings=True
         )
-    
+
         query_embedding = self.embedder.encode(
             [query],
             normalize_embeddings=True
         )[0]
-    
+
         scores = np.dot(embeddings, query_embedding)
         top_indices = np.argsort(scores)[-top_k:][::-1]
-    
+
         return [filtered_chunks[i] for i in top_indices]
 
     # -------- PROMPT --------
@@ -134,7 +133,7 @@ Question:
 
         contexts = self.retrieve(query, source_filter=source_filter)
         prompt = self.build_prompt(query, contexts)
-    
+
         stream = self.client.chat.completions.create(
             model=MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
@@ -142,19 +141,32 @@ Question:
             max_tokens=1024,
             stream=True,
         )
-    
+
         full_text = ""
-    
+
         for chunk in stream:
-            delta = chunk.choices[0].delta
-            token = getattr(delta, "content", "") if delta else ""
-    
-            if token:
-                full_text += token
-                yield token, contexts
-    
-        self.chat_history.append(f"User: {query}")
-        self.chat_history.append(f"Assistant: {full_text}")
+            try:
+                delta = chunk.choices[0].delta
+                token = getattr(delta, "content", "") if delta else ""
+
+                if token:
+                    full_text += token
+                    yield token, contexts
+
+            except Exception:
+                continue
+
+        # -------- STORE CHAT HISTORY (ChatGPT style) --------
+        self.chat_history.append({
+            "role": "user",
+            "content": query
+        })
+
+        self.chat_history.append({
+            "role": "assistant",
+            "content": full_text
+        })
+
     # -------- SUMMARY --------
     def stream_summary(self):
 
@@ -164,11 +176,9 @@ Question:
 
         docs = {}
 
-        # Group chunks by file
         for c in self.chunks:
             docs.setdefault(c["source"], []).append(c["text"])
 
-        # -------- PER FILE SUMMARY --------
         for filename, texts in docs.items():
 
             yield f"\n\n### 📄 {filename}\n\n", True
@@ -182,18 +192,14 @@ Question:
                 collected_text += t + "\n"
 
             prompt = f"""
-Generate summary STRICTLY like this:
+Summarize the document.
 
-- Point 1
-- Point 2
-- Point 3
-
-RULES:
-- MUST use "-"
-- NO paragraphs
+OUTPUT FORMAT (STRICT):
+- Each line MUST start with "-"
+- No paragraphs
+- No numbering
 - 5 to 8 points
 - Max 2 lines each
-- Do NOT copy sentences
 
 TEXT:
 {collected_text}
@@ -213,15 +219,28 @@ TEXT:
                 token = getattr(chunk.choices[0].delta, "content", "")
                 if token:
                     full_text += token
-                    yield token, True
 
-            # -------- FORCE BULLET FORMAT --------
-            if "-" not in full_text:
-                lines = full_text.split(". ")
-                fixed = "\n".join(
-                    [f"- {line.strip()}" for line in lines if line.strip()]
-                )
-                yield "\n" + fixed, True
+            # -------- CLEAN FORMAT --------
+            lines = full_text.split("\n")
+            clean_points = []
+
+            for line in lines:
+                line = line.strip()
+
+                if not line:
+                    continue
+
+                if line[0].isdigit():
+                    line = line.split(".", 1)[-1].strip()
+
+                if not line.startswith("-"):
+                    line = "- " + line
+
+                clean_points.append(line)
+
+            formatted_output = "\n".join(clean_points)
+
+            yield formatted_output, True
 
     # -------- CLEAR --------
     def clear(self):
