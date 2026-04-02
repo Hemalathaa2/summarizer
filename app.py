@@ -44,9 +44,6 @@ if uploaded_files:
 
 
 # ---------------- GENERATE SUMMARY ----------------
-if "generate_clicked" not in st.session_state:
-    st.session_state.generate_clicked = False
-
 if st.button("Generate Summary"):
     if uploaded_files:
         st.session_state.generate_clicked = True
@@ -72,4 +69,44 @@ if st.session_state.generate_clicked:
         st.session_state.summary = summary_text
         st.session_state.generate_clicked = False
 
-pass
+
+# ---------------- SHOW SAVED SUMMARY ----------------
+if st.session_state.summary:
+    st.markdown("### 📌 Summary")
+    st.markdown(st.session_state.summary)
+
+
+# ---------------- Q&A SECTION ----------------
+st.markdown("---")
+st.subheader("💬 Ask Questions from PDFs")
+
+query = st.text_input("Enter your question")
+
+if st.button("Ask"):
+    if not uploaded_files:
+        st.warning("Please upload PDFs first")
+    elif query:
+        answer_text = ""
+        answer_placeholder = st.empty()
+        contexts_used = []
+
+        for token, contexts in st.session_state.rag.stream_answer(query):
+            answer_text += token
+            contexts_used = contexts
+            answer_placeholder.markdown(answer_text + "▌")
+
+        answer_placeholder.markdown(answer_text)
+
+        # Show sources
+        with st.expander("📄 Sources"):
+            for c in contexts_used:
+                st.write(f"{c['source']} - Page {c['page']}")
+    else:
+        st.warning("Enter a question")
+
+
+# ---------------- CHAT HISTORY (OPTIONAL) ----------------
+if st.session_state.rag.chat_history:
+    st.markdown("### 🧠 Chat History")
+    for msg in st.session_state.rag.chat_history:
+        st.write(msg)
