@@ -10,7 +10,6 @@ MODEL_NAME = "llama-3.1-8b-instant"
 class RAGEngine:
 
     def __init__(self):
-
         self.client = Groq(
             api_key=st.secrets["GROQ_API_KEY"]
         )
@@ -27,7 +26,6 @@ class RAGEngine:
 
     # -------- TEXT SPLITTER --------
     def split_text(self, text, chunk_size=500, overlap=100):
-
         chunks = []
         start = 0
 
@@ -48,8 +46,8 @@ class RAGEngine:
             doc = fitz.open(stream=file.read(), filetype="pdf")
 
             for page_num, page in enumerate(doc):
-
                 text = page.get_text().strip()
+
                 if not text:
                     continue
 
@@ -70,7 +68,7 @@ class RAGEngine:
             normalize_embeddings=True
         )
 
-        # Document embeddings
+        # -------- DOCUMENT EMBEDDINGS --------
         self.doc_embeddings = {}
 
         for chunk in self.chunks:
@@ -93,24 +91,6 @@ class RAGEngine:
         top_indices = np.argsort(scores)[-top_k:][::-1]
 
         return [self.chunks[i] for i in top_indices]
-
-    # -------- SIMILARITY --------
-    def documents_are_similar(self, threshold=0.75):
-
-        docs = list(self.doc_embeddings.keys())
-
-        if len(docs) <= 1:
-            return False
-
-        vectors = [self.doc_embeddings[d] for d in docs]
-
-        similarities = []
-
-        for i in range(len(vectors)):
-            for j in range(i + 1, len(vectors)):
-                similarities.append(np.dot(vectors[i], vectors[j]))
-
-        return np.mean(similarities) >= threshold
 
     # -------- PROMPT --------
     def build_prompt(self, query, contexts):
@@ -157,48 +137,49 @@ Answer clearly using only the context.
         self.chat_history.append(f"Assistant: {full_text}")
 
     # -------- SUMMARY --------
-   def stream_summary(self):
-       if not self.chunks:
+    def stream_summary(self):
+
+        if not self.chunks:
             yield "⚠️ No documents loaded.", False
             return
-    
+
         docs = {}
-    
+
         # Group chunks by file
         for c in self.chunks:
             docs.setdefault(c["source"], []).append(c["text"])
-    
+
         # -------- PER FILE SUMMARY --------
         for filename, texts in docs.items():
-    
+
             yield f"\n\n### 📄 {filename}\n\n", True
-    
+
             MAX_CHARS = 3500
             collected_text = ""
-    
+
             for t in texts:
                 if len(collected_text) + len(t) > MAX_CHARS:
                     break
                 collected_text += t + "\n"
-    
+
             prompt = f"""
-    Generate summary STRICTLY like this:
-    
-    - Point 1
-    - Point 2
-    - Point 3
-    
-    RULES:
-    - MUST use "-"
-    - NO paragraphs
-    - 5 to 8 points
-    - Max 2 lines each
-    - Do NOT copy sentences
-    
-    TEXT:
-    {collected_text}
-    """
-    
+Generate summary STRICTLY like this:
+
+- Point 1
+- Point 2
+- Point 3
+
+RULES:
+- MUST use "-"
+- NO paragraphs
+- 5 to 8 points
+- Max 2 lines each
+- Do NOT copy sentences
+
+TEXT:
+{collected_text}
+"""
+
             stream = self.client.chat.completions.create(
                 model=MODEL_NAME,
                 messages=[{"role": "user", "content": prompt}],
@@ -206,20 +187,23 @@ Answer clearly using only the context.
                 max_tokens=600,
                 stream=True,
             )
-    
+
             full_text = ""
-    
+
             for chunk in stream:
                 token = getattr(chunk.choices[0].delta, "content", "")
                 if token:
                     full_text += token
                     yield token, True
-    
-            # Force bullet fix
+
+            # -------- FORCE BULLET FORMAT --------
             if "-" not in full_text:
                 lines = full_text.split(". ")
-                fixed = "\n".join([f"- {l.strip()}" for l in lines if l.strip()])
+                fixed = "\n".join(
+                    [f"- {line.strip()}" for line in lines if line.strip()]
+                )
                 yield "\n" + fixed, True
+
     # -------- CLEAR --------
     def clear(self):
         self.chunks = []
