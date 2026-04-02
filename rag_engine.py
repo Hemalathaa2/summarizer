@@ -159,17 +159,29 @@ Answer clearly using only the context.
     # -------- SUMMARY --------
     def stream_summary(self):
 
-        if not self.chunks:
-            yield "⚠️ No documents loaded.", False
-            return
+    if not self.chunks:
+        yield "⚠️ No documents loaded.", False
+        return
+
+    docs = {}
+
+    # Group chunks by file
+    for c in self.chunks:
+        docs.setdefault(c["source"], []).append(c["text"])
+
+    # -------- PER FILE SUMMARY --------
+    for filename, texts in docs.items():
+
+        # ✅ Show PDF name as heading
+        yield f"\n\n### 📄 {filename}\n\n", True
 
         MAX_CHARS = 3500
         collected_text = ""
 
-        for c in self.chunks:
-            if len(collected_text) + len(c["text"]) > MAX_CHARS:
+        for t in texts:
+            if len(collected_text) + len(t) > MAX_CHARS:
                 break
-            collected_text += c["text"] + "\n"
+            collected_text += t + "\n"
 
         prompt = f"""
 Generate summary STRICTLY like this:
@@ -205,7 +217,7 @@ TEXT:
                 full_text += token
                 yield token, True
 
-        # Force bullet fix
+        # ✅ Force bullet fix
         if "-" not in full_text:
             lines = full_text.split(". ")
             fixed = "\n".join([f"- {l.strip()}" for l in lines if l.strip()])
