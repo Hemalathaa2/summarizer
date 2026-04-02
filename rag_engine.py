@@ -3,11 +3,7 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 from groq import Groq
 import streamlit as st
-import hashlib
 
-# -----------------------------
-# GROQ CONFIG
-# -----------------------------
 MODEL_NAME = "llama-3.1-8b-instant"
 
 
@@ -29,9 +25,7 @@ class RAGEngine:
         self.doc_embeddings = {}
         self.chat_history = []
 
-    # --------------------------------
-    # TEXT SPLITTER
-    # --------------------------------
+    # -------- TEXT SPLITTER --------
     def split_text(self, text, chunk_size=500, overlap=100):
 
         chunks = []
@@ -44,15 +38,13 @@ class RAGEngine:
 
         return chunks
 
-    # --------------------------------
-    # LOAD PDFs
-    # --------------------------------
+    # -------- LOAD PDFs --------
     def load_pdfs(self, files):
 
         self.chunks = []
-        self.file_hashes = set()
+
         for file in files:
-            file.seek(0)  # ✅ prevents duplicate reading
+            file.seek(0)
             doc = fitz.open(stream=file.read(), filetype="pdf")
 
             for page_num, page in enumerate(doc):
@@ -78,7 +70,7 @@ class RAGEngine:
             normalize_embeddings=True
         )
 
-        # -------- Document embeddings
+        # Document embeddings
         self.doc_embeddings = {}
 
         for chunk in self.chunks:
@@ -89,9 +81,7 @@ class RAGEngine:
             emb = self.embedder.encode(texts, normalize_embeddings=True)
             self.doc_embeddings[src] = np.mean(emb, axis=0)
 
-    # --------------------------------
-    # RETRIEVAL
-    # --------------------------------
+    # -------- RETRIEVE --------
     def retrieve(self, query, top_k=4):
 
         query_embedding = self.embedder.encode(
@@ -104,9 +94,7 @@ class RAGEngine:
 
         return [self.chunks[i] for i in top_indices]
 
-    # --------------------------------
-    # TOPIC SIMILARITY CHECK
-    # --------------------------------
+    # -------- SIMILARITY --------
     def documents_are_similar(self, threshold=0.75):
 
         docs = list(self.doc_embeddings.keys())
@@ -120,14 +108,11 @@ class RAGEngine:
 
         for i in range(len(vectors)):
             for j in range(i + 1, len(vectors)):
-                sim = np.dot(vectors[i], vectors[j])
-                similarities.append(sim)
+                similarities.append(np.dot(vectors[i], vectors[j]))
 
         return np.mean(similarities) >= threshold
 
-    # --------------------------------
-    # PROMPT BUILDER
-    # --------------------------------
+    # -------- PROMPT --------
     def build_prompt(self, query, contexts):
 
         context_text = "\n\n".join(
@@ -147,9 +132,7 @@ Question:
 Answer clearly using only the context.
 """
 
-    # --------------------------------
-    # STREAM CHAT ANSWER
-    # --------------------------------
+    # -------- Q&A --------
     def stream_answer(self, query):
 
         contexts = self.retrieve(query)
@@ -166,125 +149,70 @@ Answer clearly using only the context.
         full_text = ""
 
         for chunk in stream:
-            delta = chunk.choices[0].delta
-            token = getattr(delta, "content", "") if delta else ""
-
+            token = getattr(chunk.choices[0].delta, "content", "")
             full_text += token
             yield token, contexts
 
         self.chat_history.append(f"User: {query}")
         self.chat_history.append(f"Assistant: {full_text}")
 
-    # --------------------------------
-    # STREAM SUMMARY
-    # --------------------------------
+    # -------- SUMMARY --------
     def stream_summary(self):
 
         if not self.chunks:
             yield "⚠️ No documents loaded.", False
             return
 
-        similar = self.documents_are_similar()
+        MAX_CHARS = 3500
+        collected_text = ""
 
-        # ========= COMBINED SUMMARY =========
-        if similar:
+        for c in self.chunks:
+            if len(collected_text) + len(c["text"]) > MAX_CHARS:
+                break
+            collected_text += c["text"] + "\n"
 
-            yield "📚 **Combined Summary **\n\n", True
+        prompt = f"""
+Generate summary STRICTLY like this:
 
-            MAX_CHARS = 3500
-            collected_text = ""
+- Point 1
+- Point 2
+- Point 3
 
-            for c in self.chunks:
-                text = c["text"]
-                if len(collected_text) + len(text) > MAX_CHARS:
-                    break
-                collected_text += text + "\n"
-
-            prompt = f"""
-You are an expert document summarizer.
-
-Create a summary ONLY in bullet points.
-
-STRICT FORMAT:
-- Each point MUST start with "-"
-- No paragraphs
-- 5 to 8 points only
-- Each point max 2 lines
-
-STRICT RULES:
+RULES:
+- MUST use "-"
+- NO paragraphs
+- 5 to 8 points
+- Max 2 lines each
 - Do NOT copy sentences
-- Compress information
-- Focus only on key ideas
 
-DOCUMENTS:
+TEXT:
 {collected_text}
 """
 
-            stream = self.client.chat.completions.create(
-                model=MODEL_NAME,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.3,
-                max_tokens=600,
-                stream=True,
-            )
+        stream = self.client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2,
+            max_tokens=600,
+            stream=True,
+        )
 
-            for chunk in stream:
-                token = getattr(chunk.choices[0].delta, "content", "")
-                if token:
-                    yield token, True
+        full_text = ""
 
-        # ========= SEPARATE SUMMARIES =========
-        else:
+        for chunk in stream:
+            token = getattr(chunk.choices[0].delta, "content", "")
+            if token:
+                full_text += token
+                yield token, True
 
-            yield "📄 ** Summary**\n", True
+        # Force bullet fix
+        if "-" not in full_text:
+            lines = full_text.split(". ")
+            fixed = "\n".join([f"- {l.strip()}" for l in lines if l.strip()])
+            yield "\n" + fixed, True
 
-            docs = {}
-            for c in self.chunks:
-                docs.setdefault(c["source"], []).append(c["text"])
-
-            for filename, texts in docs.items():
-
-                yield f"\n\n### {filename}\n\n", True
-
-                MAX_CHARS = 3500
-                collected_text = ""
-
-                for t in texts:
-                    if len(collected_text) + len(t) > MAX_CHARS:
-                        break
-                    collected_text += t + "\n"
-
-                prompt = f"""
-You are an expert document summarizer.
-
-Summarize this document in 5–8 concise bullet points.
-
-Rules:
-- Do NOT copy text
-- Extract only important concepts
-
-DOCUMENT:
-{collected_text}
-"""
-
-                stream = self.client.chat.completions.create(
-                    model=MODEL_NAME,
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.3,
-                    max_tokens=600,
-                    stream=True,
-                )
-
-                for chunk in stream:
-                    token = getattr(chunk.choices[0].delta, "content", "")
-                    if token:
-                        yield token, True
-
-    # --------------------------------
-    # CLEAR MEMORY (FIXED INDENTATION)
-    # --------------------------------
+    # -------- CLEAR --------
     def clear(self):
-        """Reset stored PDFs and embeddings"""
         self.chunks = []
         self.embeddings = None
         self.doc_embeddings = {}
