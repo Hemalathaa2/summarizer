@@ -157,72 +157,69 @@ Answer clearly using only the context.
         self.chat_history.append(f"Assistant: {full_text}")
 
     # -------- SUMMARY --------
-    def stream_summary(self):
-
-    if not self.chunks:
-        yield "⚠️ No documents loaded.", False
-        return
-
-    docs = {}
-
-    # Group chunks by file
-    for c in self.chunks:
-        docs.setdefault(c["source"], []).append(c["text"])
-
-    # -------- PER FILE SUMMARY --------
-    for filename, texts in docs.items():
-
-        # ✅ Show PDF name as heading
-        yield f"\n\n### 📄 {filename}\n\n", True
-
-        MAX_CHARS = 3500
-        collected_text = ""
-
-        for t in texts:
-            if len(collected_text) + len(t) > MAX_CHARS:
-                break
-            collected_text += t + "\n"
-
-        prompt = f"""
-Generate summary STRICTLY like this:
-
-- Point 1
-- Point 2
-- Point 3
-
-RULES:
-- MUST use "-"
-- NO paragraphs
-- 5 to 8 points
-- Max 2 lines each
-- Do NOT copy sentences
-
-TEXT:
-{collected_text}
-"""
-
-        stream = self.client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,
-            max_tokens=600,
-            stream=True,
-        )
-
-        full_text = ""
-
-        for chunk in stream:
-            token = getattr(chunk.choices[0].delta, "content", "")
-            if token:
-                full_text += token
-                yield token, True
-
-        # ✅ Force bullet fix
-        if "-" not in full_text:
-            lines = full_text.split(". ")
-            fixed = "\n".join([f"- {l.strip()}" for l in lines if l.strip()])
-            yield "\n" + fixed, True
-
+   def stream_summary(self):
+       if not self.chunks:
+            yield "⚠️ No documents loaded.", False
+            return
+    
+        docs = {}
+    
+        # Group chunks by file
+        for c in self.chunks:
+            docs.setdefault(c["source"], []).append(c["text"])
+    
+        # -------- PER FILE SUMMARY --------
+        for filename, texts in docs.items():
+    
+            yield f"\n\n### 📄 {filename}\n\n", True
+    
+            MAX_CHARS = 3500
+            collected_text = ""
+    
+            for t in texts:
+                if len(collected_text) + len(t) > MAX_CHARS:
+                    break
+                collected_text += t + "\n"
+    
+            prompt = f"""
+    Generate summary STRICTLY like this:
+    
+    - Point 1
+    - Point 2
+    - Point 3
+    
+    RULES:
+    - MUST use "-"
+    - NO paragraphs
+    - 5 to 8 points
+    - Max 2 lines each
+    - Do NOT copy sentences
+    
+    TEXT:
+    {collected_text}
+    """
+    
+            stream = self.client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.2,
+                max_tokens=600,
+                stream=True,
+            )
+    
+            full_text = ""
+    
+            for chunk in stream:
+                token = getattr(chunk.choices[0].delta, "content", "")
+                if token:
+                    full_text += token
+                    yield token, True
+    
+            # Force bullet fix
+            if "-" not in full_text:
+                lines = full_text.split(". ")
+                fixed = "\n".join([f"- {l.strip()}" for l in lines if l.strip()])
+                yield "\n" + fixed, True
     # -------- CLEAR --------
     def clear(self):
         self.chunks = []
