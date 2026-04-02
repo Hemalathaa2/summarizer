@@ -101,15 +101,17 @@ class RAGEngine:
         )
 
         return f"""
-You are an AI assistant answering questions from documents.
+Answer ONLY from the given context.
+
+STRICT RULES:
+- Do NOT assume or infer
+- If answer not present, say: "Not mentioned in document"
 
 Context:
 {context_text}
 
 Question:
 {query}
-
-Answer clearly using only the context.
 """
 
     # -------- Q&A --------
@@ -129,9 +131,16 @@ Answer clearly using only the context.
         full_text = ""
 
         for chunk in stream:
-            token = getattr(chunk.choices[0].delta, "content", "")
-            full_text += token
-            yield token, contexts
+            try:
+                delta = chunk.choices[0].delta
+                token = getattr(delta, "content", "") if delta else ""
+        
+                if token:
+                    full_text += token
+                    yield token, contexts
+        
+            except Exception:
+                continue
 
         self.chat_history.append(f"User: {query}")
         self.chat_history.append(f"Assistant: {full_text}")
