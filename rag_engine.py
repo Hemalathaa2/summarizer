@@ -10,9 +10,7 @@ MODEL_NAME = "llama-3.1-8b-instant"
 class RAGEngine:
 
     def __init__(self):
-        self.client = Groq(
-            api_key=st.secrets["GROQ_API_KEY"]
-        )
+        self.client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
         self.embedder = SentenceTransformer(
             "all-MiniLM-L6-v2",
@@ -21,10 +19,9 @@ class RAGEngine:
 
         self.chunks = []
         self.embeddings = None
-        self.doc_embeddings = {}
         self.chat_history = []
 
-    # -------- TEXT SPLITTER --------
+    # -------- TEXT SPLIT --------
     def split_text(self, text, chunk_size=500, overlap=100):
         chunks = []
         start = 0
@@ -38,7 +35,6 @@ class RAGEngine:
 
     # -------- LOAD PDFs --------
     def load_pdfs(self, files):
-
         self.chunks = []
 
         for file in files:
@@ -59,28 +55,10 @@ class RAGEngine:
                     })
 
         if not self.chunks:
-            raise ValueError("No readable text found in PDFs.")
-
-        texts = [c["text"] for c in self.chunks]
-
-        self.embeddings = self.embedder.encode(
-            texts,
-            normalize_embeddings=True
-        )
-
-        # -------- DOCUMENT EMBEDDINGS --------
-        self.doc_embeddings = {}
-
-        for chunk in self.chunks:
-            src = chunk["source"]
-            self.doc_embeddings.setdefault(src, []).append(chunk["text"])
-
-        for src, texts in self.doc_embeddings.items():
-            emb = self.embedder.encode(texts, normalize_embeddings=True)
-            self.doc_embeddings[src] = np.mean(emb, axis=0)
+            raise ValueError("No readable text found.")
 
     # -------- RETRIEVE --------
-    def retrieve(self, query, top_k=4, source_filter=None):
+    def retrieve(self, query, source_filter=None, top_k=4):
 
         filtered_chunks = self.chunks
 
@@ -91,15 +69,8 @@ class RAGEngine:
 
         texts = [c["text"] for c in filtered_chunks]
 
-        embeddings = self.embedder.encode(
-            texts,
-            normalize_embeddings=True
-        )
-
-        query_embedding = self.embedder.encode(
-            [query],
-            normalize_embeddings=True
-        )[0]
+        embeddings = self.embedder.encode(texts, normalize_embeddings=True)
+        query_embedding = self.embedder.encode([query], normalize_embeddings=True)[0]
 
         scores = np.dot(embeddings, query_embedding)
         top_indices = np.argsort(scores)[-top_k:][::-1]
@@ -117,9 +88,8 @@ class RAGEngine:
         return f"""
 Answer ONLY from the given context.
 
-STRICT RULES:
-- Do NOT assume or infer
-- If answer not present, say: "Not mentioned in document"
+If answer not present, say:
+"Not mentioned in document"
 
 Context:
 {context_text}
@@ -146,32 +116,22 @@ Question:
 
         for chunk in stream:
             try:
-                delta = chunk.choices[0].delta
-                token = getattr(delta, "content", "") if delta else ""
-
+                token = getattr(chunk.choices[0].delta, "content", "")
                 if token:
                     full_text += token
-                    yield token, contexts
-
-            except Exception:
+                    yield token
+            except:
                 continue
 
-        # -------- STORE CHAT HISTORY (ChatGPT style) --------
-        self.chat_history.append({
-            "role": "user",
-            "content": query
-        })
-
-        self.chat_history.append({
-            "role": "assistant",
-            "content": full_text
-        })
+        # Save chat
+        self.chat_history.append({"role": "user", "content": query})
+        self.chat_history.append({"role": "assistant", "content": full_text})
 
     # -------- SUMMARY --------
     def stream_summary(self):
 
         if not self.chunks:
-            yield "⚠️ No documents loaded.", False
+            yield "⚠️ No documents loaded."
             return
 
         docs = {}
@@ -181,25 +141,21 @@ Question:
 
         for filename, texts in docs.items():
 
-            yield f"\n\n### 📄 {filename}\n\n", True
+            yield f"\n\n### 📄 {filename}\n\n"
 
-            MAX_CHARS = 3500
             collected_text = ""
 
             for t in texts:
-                if len(collected_text) + len(t) > MAX_CHARS:
+                if len(collected_text) > 3500:
                     break
                 collected_text += t + "\n"
 
             prompt = f"""
-Summarize the document.
+Summarize in bullet points ONLY:
 
-OUTPUT FORMAT (STRICT):
-- Each line MUST start with "-"
-- No paragraphs
-- No numbering
+- Use "-"
 - 5 to 8 points
-- Max 2 lines each
+- No paragraphs
 
 TEXT:
 {collected_text}
@@ -220,31 +176,20 @@ TEXT:
                 if token:
                     full_text += token
 
-            # -------- CLEAN FORMAT --------
             lines = full_text.split("\n")
-            clean_points = []
+            clean = []
 
             for line in lines:
                 line = line.strip()
-
                 if not line:
                     continue
-
-                if line[0].isdigit():
-                    line = line.split(".", 1)[-1].strip()
-
                 if not line.startswith("-"):
                     line = "- " + line
+                clean.append(line)
 
-                clean_points.append(line)
-
-            formatted_output = "\n".join(clean_points)
-
-            yield formatted_output, True
+            yield "\n".join(clean)
 
     # -------- CLEAR --------
     def clear(self):
         self.chunks = []
-        self.embeddings = None
-        self.doc_embeddings = {}
         self.chat_history = []
