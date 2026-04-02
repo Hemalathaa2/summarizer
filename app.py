@@ -69,7 +69,7 @@ if pdf_list:
 
 # -------- CHAT SECTION --------
 st.markdown("---")
-st.subheader("💬 Ask Questions")
+st.subheader("💬 Q & A")
 
 # Show chat history (ChatGPT style)
 for msg in st.session_state.rag.chat_history:
@@ -100,22 +100,19 @@ if st.button("Ask"):
         with st.chat_message("assistant"):
             placeholder = st.empty()
 
-            contexts_used = []
+            
 
             for token, contexts in st.session_state.rag.stream_answer(
                 query,
                 source_filter=selected_pdf
             ):
                 answer_text += token
-                contexts_used = contexts
+                
                 placeholder.markdown(answer_text + "▌")
 
             placeholder.markdown(answer_text)
 
-        # Show sources
-        with st.expander("📄 Sources"):
-            for c in contexts_used:
-                st.write(f"{c['source']} - Page {c['page']}")
+        
 
     else:
         st.warning("Enter a question")
