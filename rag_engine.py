@@ -203,7 +203,13 @@ Answer clearly using only the context.
             prompt = f"""
 You are an expert document summarizer.
 
-Create a concise summary (5–8 bullet points).
+Create a summary ONLY in bullet points.
+
+STRICT FORMAT:
+- Each point MUST start with "-"
+- No paragraphs
+- 5 to 8 points only
+- Each point max 2 lines
 
 STRICT RULES:
 - Do NOT copy sentences
