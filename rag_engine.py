@@ -80,17 +80,32 @@ class RAGEngine:
             self.doc_embeddings[src] = np.mean(emb, axis=0)
 
     # -------- RETRIEVE --------
-    def retrieve(self, query, top_k=4):
+    def retrieve(self, query, top_k=4, source_filter=None):
 
+    # Filter chunks by selected PDF
+        filtered_chunks = self.chunks
+    
+        if source_filter:
+            filtered_chunks = [
+                c for c in self.chunks if c["source"] == source_filter
+            ]
+    
+        texts = [c["text"] for c in filtered_chunks]
+    
+        embeddings = self.embedder.encode(
+            texts,
+            normalize_embeddings=True
+        )
+    
         query_embedding = self.embedder.encode(
             [query],
             normalize_embeddings=True
         )[0]
-
-        scores = np.dot(self.embeddings, query_embedding)
+    
+        scores = np.dot(embeddings, query_embedding)
         top_indices = np.argsort(scores)[-top_k:][::-1]
-
-        return [self.chunks[i] for i in top_indices]
+    
+        return [filtered_chunks[i] for i in top_indices]
 
     # -------- PROMPT --------
     def build_prompt(self, query, contexts):
@@ -115,11 +130,11 @@ Question:
 """
 
     # -------- Q&A --------
-    def stream_answer(self, query):
+    def stream_answer(self, query, source_filter=None):
 
-        contexts = self.retrieve(query)
+        contexts = self.retrieve(query, source_filter=source_filter)
         prompt = self.build_prompt(query, contexts)
-
+    
         stream = self.client.chat.completions.create(
             model=MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
@@ -127,24 +142,19 @@ Question:
             max_tokens=1024,
             stream=True,
         )
-
+    
         full_text = ""
-
+    
         for chunk in stream:
-            try:
-                delta = chunk.choices[0].delta
-                token = getattr(delta, "content", "") if delta else ""
-        
-                if token:
-                    full_text += token
-                    yield token, contexts
-        
-            except Exception:
-                continue
-
+            delta = chunk.choices[0].delta
+            token = getattr(delta, "content", "") if delta else ""
+    
+            if token:
+                full_text += token
+                yield token, contexts
+    
         self.chat_history.append(f"User: {query}")
         self.chat_history.append(f"Assistant: {full_text}")
-
     # -------- SUMMARY --------
     def stream_summary(self):
 
