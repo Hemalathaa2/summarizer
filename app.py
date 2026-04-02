@@ -14,6 +14,9 @@ if "files_hash" not in st.session_state:
 if "summary" not in st.session_state:
     st.session_state.summary = None
 
+if "chat_input" not in st.session_state:
+    st.session_state.chat_input = ""
+
 # -------- UPLOAD --------
 uploaded_files = st.file_uploader(
     "Upload PDFs",
@@ -28,6 +31,7 @@ if uploaded_files:
     if new_hash != st.session_state.files_hash:
         st.session_state.files_hash = new_hash
         st.session_state.summary = None
+        st.session_state.chat_input = ""
 
         st.session_state.rag.clear()
         st.session_state.rag.load_pdfs(uploaded_files)
@@ -51,14 +55,14 @@ if st.button("Generate Summary"):
 
             placeholder.markdown(summary_text)
 
-            # Store but DO NOT reprint
             st.session_state.summary = summary_text
+
 
 # -------- Q&A --------
 st.markdown("---")
 st.subheader("💬 Ask Questions")
 
-query = st.text_input("Enter your question")
+query = st.text_input("Enter your question", key="chat_input")
 
 if st.button("Ask"):
 
